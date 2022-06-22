@@ -1,0 +1,6 @@
+[submodule "RenderingTools"]
+	path = RenderingTools
+	url = https://github.com/CinderBlocc/RenderingTools.git
+[submodule "FreeplayTargets/RenderingTools"]
+	path = FreeplayTargets/RenderingTools
+	url = https://github.com/CinderBlocc/RenderingTools.git

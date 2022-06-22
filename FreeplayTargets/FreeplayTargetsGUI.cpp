@@ -13,7 +13,36 @@ void FreeplayTargets::SetImGuiContext(uintptr_t ctx) {
 // This will show up in bakkesmod when the plugin is loaded at
 //  f2 -> plugins -> FreeplayTargets
 void FreeplayTargets::RenderSettings() {
-	ImGui::TextUnformatted("FreeplayTargets plugin settings");
+	ImGui::Text("Sets targets to aim for in freeplay");
+
+	CVarWrapper backVar = cvarManager->getCvar("freeplay_targets_back");
+	if (!backVar) { return; }
+	float backValue = backVar.getFloatValue();
+	if (ImGui::SliderFloat("Back of net", &backValue, 4900, 5200)) {
+		backVar.setValue(backValue);
+	}
+
+	CVarWrapper targetTypeVar = cvarManager->getCvar("freeplay_targets_target_pool");
+	if (!targetTypeVar) { return; }
+	int targetTypeValue = targetTypeVar.getIntValue();
+	if (ImGui::RadioButton("2x2 Targets", targetTypeValue == 0)) {
+		targetTypeVar.setValue(0);
+	}
+	ImGui::SameLine();
+	if (ImGui::RadioButton("3x3 Targets", targetTypeValue == 1)) {
+		targetTypeVar.setValue(1);
+	}
+
+	CVarWrapper lineColorVar = cvarManager->getCvar("freeplay_targets_line_color");
+	if (!lineColorVar) { return; }
+	// converts from 0-255 color to 0.0-1.0 color
+	LinearColor lineColor = lineColorVar.getColorValue() / 255;
+	if (ImGui::ColorEdit4("Line Color", &lineColor.R)) {
+		lineColorVar.setValue(lineColor * 255);
+	}
+
+	ImGui::TextUnformatted("Plugin commissioned by tom#6560");
+	ImGui::TextUnformatted("Plugin made by JerryTheBee#1117 - DM me on discord for custom plugin commissions!");
 }
 
 /*

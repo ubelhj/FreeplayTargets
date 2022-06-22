@@ -2,7 +2,7 @@
 #include "FreeplayTargets.h"
 
 
-BAKKESMOD_PLUGIN(FreeplayTargets, "write a plugin description here", plugin_version, PLUGINTYPE_FREEPLAY)
+BAKKESMOD_PLUGIN(FreeplayTargets, "FreeplayTargets", plugin_version, PLUGINTYPE_FREEPLAY)
 
 std::shared_ptr<CVarManagerWrapper> _globalCvarManager;
 
@@ -15,31 +15,59 @@ void FreeplayTargets::onLoad()
 
     RandomDevice = std::make_shared<std::mt19937>(rng);
 
-    cvarManager->registerCvar("moved_goals_back", std::to_string(backWall), "back wall location")
+    cvarManager->registerCvar("freeplay_targets_back", std::to_string(backWall), "back wall location")
         .addOnValueChanged([this](std::string, CVarWrapper cvar) {
         backWall = cvar.getIntValue();
             });
 
-    cvarManager->registerCvar("moved_goals_num_slices", std::to_string(numSlices), "number of slices")
+    cvarManager->registerCvar("freeplay_targets_num_slices", std::to_string(numSlices), "number of slices")
         .addOnValueChanged([this](std::string, CVarWrapper cvar) {
         numSlices = cvar.getIntValue();
             });
 
-    cvarManager->registerCvar("moved_goals_line_width", std::to_string(width), "line width")
+    cvarManager->registerCvar("freeplay_targets_line_width", std::to_string(width), "line width")
         .addOnValueChanged([this](std::string, CVarWrapper cvar) {
         width = cvar.getIntValue();
             });
 
-    cvarManager->registerCvar("moved_goals_line_color", "#000000FF", "line color")
+    color = { 255.0, 255.0, 255.0, 255.0 };
+    cvarManager->registerCvar("freeplay_targets_line_color", "#FFFFFFFF", "line color")
         .addOnValueChanged([this](std::string, CVarWrapper cvar) {
         color = cvar.getColorValue();
             });
 
-    gameWrapper->HookEventPost("Function GameEvent_Soccar_TA.Countdown.BeginState",
+    cvarManager->registerCvar("freeplay_targets_target_pool", "0", "target pool", true, true, 0)
+        .addOnValueChanged([this](std::string, CVarWrapper cvar) {
+            int newTargets = cvar.getIntValue();
+            if (newTargets < targetTypes.size()) {
+                goalLoc = 0;
+                if (newTargets == 0) {
+                    goalWidth = 1786 / 2;
+                    goalHeight = 642 / 2;
+                    currentTargets = *targetTypes[0];
+                }
+                else if (newTargets == 1) {
+                    goalWidth = 1786 / 3;
+                    goalHeight = 642 / 3;
+                    currentTargets = *targetTypes[1];
+                }
+                goalLoc = generateGoalLocation();
+            }
+            });
+
+    cvarManager->registerCvar("freeplay_targets_target", "0", "target", true, true, 0)
+        .addOnValueChanged([this](std::string, CVarWrapper cvar) {
+            int newLoc = cvar.getIntValue();
+            if (newLoc < currentTargets.size()) {
+                goalLoc = newLoc;
+            }
+            });
+
+    gameWrapper->HookEventPost("Function GameEvent_Soccar_TA.Active.StartRound",
         [this](...) {
-            if (gameWrapper->IsInOnlineGame()) { return; }
-            Vector newGoalBlue = generateGoalLocation();
-            Vector newGoalOrange = generateGoalLocation();
+            DEBUGLOG("New ROUND");
+            if (gameWrapper->IsInOnlineGame() || !gameWrapper->IsInGame()) { return; }
+            goalLoc = generateGoalLocation();
         });
 
     gameWrapper->HookEventWithCallerPost<CarWrapper>("Function TAGame.Car_TA.SetVehicleInput",
@@ -73,16 +101,12 @@ void FreeplayTargets::onTick(CarWrapper caller) {
     // end of goal is +-5200
     auto ballLoc = ball.GetLocation();
     auto velocity = ball.GetVelocity();
-    auto speed = velocity.magnitude();
-    // converts speed to km/h from cm/s
-    speed *= 0.036f;
-    speed += 0.5f;
 
     //  5028
     if (ballLoc.Y > backWall && velocity.Y > 0) {
         // ball is going in orange net
 
-        if (isWithin(goalLocOrange, ballLoc)) {
+        if (isWithin(currentTargets[goalLoc], ballLoc, false)) {
             DEBUGLOG("within goal");
 
             auto goals = sw.GetGoals();
@@ -106,7 +130,7 @@ void FreeplayTargets::onTick(CarWrapper caller) {
         // ball is going in blue net
         //DEBUGLOG("shot taken at blue wall: x " + std::to_string(ballLoc.X) + ", z " + std::to_string(ballLoc.Z));
         //DEBUGLOG("blue goal: x " + std::to_string(goalLocBlue.X) + ", z " + std::to_string(goalLocBlue.Z));
-        if (isWithin(goalLocBlue, ballLoc)) {
+        if (isWithin(currentTargets[goalLoc], ballLoc, true)) {
             DEBUGLOG("within goal");
 
             auto goals = sw.GetGoals();
@@ -128,32 +152,25 @@ void FreeplayTargets::onTick(CarWrapper caller) {
     }
 }
 
-Vector FreeplayTargets::generateGoalLocation() {
-    int maxX = (backWallLength / 2) - (goalWidth / 2);
-    int minX = -maxX;
+int FreeplayTargets::generateGoalLocation() {
 
-    int maxZ = topBackWall - (goalHeight / 2);
-    int minZ = goalHeight / 2;
+    std::uniform_int_distribution<std::mt19937::result_type> dist(0, currentTargets.size() - 1);
 
-    std::uniform_int_distribution<std::mt19937::result_type> distX(minX, maxX);
+    int targetType = dist(*RandomDevice.get());
 
-    int xVal = distX(*RandomDevice.get());
+    DEBUGLOG("Chose Target {}, X = {}, Z = {}", targetType, currentTargets[targetType].X, currentTargets[targetType].Z);
 
-    std::uniform_int_distribution<std::mt19937::result_type> distZ(minZ, maxZ);
-
-    int zVal = distZ(*RandomDevice.get());
-
-    return Vector(xVal, backWall, zVal);
+    return targetType;
 }
 
-bool FreeplayTargets::isWithin(Vector goalLoc, Vector ballLoc) {
-    float goalMinX = goalLoc.X - (goalWidth / 2);
-    float goalMaxX = goalLoc.X + (goalWidth / 2);
+bool FreeplayTargets::isWithin(Vector goalLoc, Vector ballLoc, bool blue) {
+    float goalMinX = goalLoc.X;
+    float goalMaxX = goalLoc.X + goalWidth;
 
-    float goalMinZ = goalLoc.Z - (goalHeight / 2);
-    float goalMaxZ = goalLoc.Z + (goalHeight / 2);
+    float goalMinZ = goalLoc.Z - goalHeight;
+    float goalMaxZ = goalLoc.Z;
 
-    return ballLoc.X > goalMinX && ballLoc.X < goalMaxX&& ballLoc.Z > goalMinZ && ballLoc.Z < goalMaxZ;
+    return ballLoc.X > goalMinX && ballLoc.X < goalMaxX && ballLoc.Z > goalMinZ && ballLoc.Z < goalMaxZ;
 }
 
 void FreeplayTargets::render(CanvasWrapper canvas) {
@@ -161,84 +178,84 @@ void FreeplayTargets::render(CanvasWrapper canvas) {
     ServerWrapper sw = gameWrapper->GetCurrentGameState();
 
     if (!sw) {
+        //DEBUGLOG("No server");
         return;
     }
 
     if (gameWrapper->IsInOnlineGame() || !gameWrapper->IsInGame()) { return; }
 
     CameraWrapper camera = gameWrapper->GetCamera();
-    if (camera.IsNull()) return;
+    if (camera.IsNull()) {
+        //DEBUGLOG("No camera"); 
+        return;
+    }
 
     auto camLoc = camera.GetLocation();
     RT::Frustum frust{ canvas, camera };
 
-    float blueLeft = goalLocBlue.X - (goalWidth / 2);
-    float blueRight = goalLocBlue.X + (goalWidth / 2);
-    float blueTop = goalLocBlue.Z + (goalHeight / 2);
-    float blueBot = goalLocBlue.Z - (goalHeight / 2);
+    Vector goalVec = currentTargets[goalLoc];
 
-    Vector blueTopLeft(blueLeft, -backWall, blueTop);
-    Vector blueTopRight(blueRight, -backWall, blueTop);
-    Vector blueBotLeft(blueLeft, -backWall, blueBot);
-    Vector blueBotRight(blueRight, -backWall, blueBot);
+    float leftBlue = goalVec.X + goalWidth;
+    float rightBlue = goalVec.X;
+    float top = goalVec.Z;
+    float bottom = goalVec.Z - goalHeight;
+
+    Vector blueTopLeft(leftBlue, -backWall, top);
+    Vector blueTopRight(rightBlue, -backWall, top);
+    Vector blueBotLeft(leftBlue, -backWall, bottom);
+    Vector blueBotRight(rightBlue, -backWall, bottom);
 
     canvas.SetColor(color);
 
-    if (orangeEnabled) {
+    RT::Line blueLineTop(blueTopLeft, blueTopRight, RT::GetVisualDistance(canvas, frust, camera, blueTopLeft) * width);
+    blueLineTop.DrawWithinFrustum(canvas, frust);
+    RT::Line blueLineRight(blueTopRight, blueBotRight, RT::GetVisualDistance(canvas, frust, camera, blueTopRight) * width);
+    blueLineRight.DrawWithinFrustum(canvas, frust);
+    RT::Line blueLineBot(blueBotRight, blueBotLeft, RT::GetVisualDistance(canvas, frust, camera, blueBotRight) * width);
+    blueLineBot.DrawWithinFrustum(canvas, frust);
+    RT::Line blueLineLeft(blueBotLeft, blueTopLeft, RT::GetVisualDistance(canvas, frust, camera, blueBotLeft) * width);
+    blueLineLeft.DrawWithinFrustum(canvas, frust);
 
-        RT::Line blueLineTop(blueTopLeft, blueTopRight, RT::GetVisualDistance(canvas, frust, camera, blueTopLeft) * width);
-        blueLineTop.DrawWithinFrustum(canvas, frust);
-        RT::Line blueLineRight(blueTopRight, blueBotRight, RT::GetVisualDistance(canvas, frust, camera, blueTopRight) * width);
-        blueLineRight.DrawWithinFrustum(canvas, frust);
-        RT::Line blueLineBot(blueBotRight, blueBotLeft, RT::GetVisualDistance(canvas, frust, camera, blueBotRight) * width);
-        blueLineBot.DrawWithinFrustum(canvas, frust);
-        RT::Line blueLineLeft(blueBotLeft, blueTopLeft, RT::GetVisualDistance(canvas, frust, camera, blueBotLeft) * width);
-        blueLineLeft.DrawWithinFrustum(canvas, frust);
+    float blueSliceSpace = (top - bottom) / numSlices;
+    float blueSliceZ = bottom + blueSliceSpace;
+    for (int i = 0; i < numSlices - 1; i++) {
+        Vector blueSliceLeft(leftBlue, -backWall, blueSliceZ);
+        Vector blueSliceRight(rightBlue, -backWall, blueSliceZ);
 
-        float blueSliceSpace = (blueTop - blueBot) / numSlices;
-        float blueSliceZ = blueBot + blueSliceSpace;
-        for (int i = 0; i < numSlices - 1; i++) {
-            Vector blueSliceLeft(blueLeft, -backWall, blueSliceZ);
-            Vector blueSliceRight(blueRight, -backWall, blueSliceZ);
+        RT::Line blueSlice(blueSliceLeft, blueSliceRight, RT::GetVisualDistance(canvas, frust, camera, blueSliceLeft) * width);
+        blueSlice.DrawWithinFrustum(canvas, frust);
 
-            RT::Line blueSlice(blueSliceLeft, blueSliceRight, RT::GetVisualDistance(canvas, frust, camera, blueSliceLeft) * width);
-            blueSlice.DrawWithinFrustum(canvas, frust);
-
-            blueSliceZ += blueSliceSpace;
-        }
+        blueSliceZ += blueSliceSpace;
     }
 
-    if (blueEnabled) {
+    float leftOrange = goalVec.X;
+    float rightOrange = goalVec.X + goalWidth;
 
-        float orangeLeft = goalLocOrange.X - (goalWidth / 2);
-        float orangeRight = goalLocOrange.X + (goalWidth / 2);
-        float orangeTop = goalLocOrange.Z + (goalHeight / 2);
-        float orangeBot = goalLocOrange.Z - (goalHeight / 2);
+    Vector orangeTopLeft(leftOrange, backWall, top);
+    Vector orangeTopRight(rightOrange, backWall, top);
+    Vector orangeBotLeft(leftOrange, backWall, bottom);
+    Vector orangeBotRight(rightOrange, backWall, bottom);
 
-        Vector orangeTopLeft(orangeLeft, backWall, orangeTop);
-        Vector orangeTopRight(orangeRight, backWall, orangeTop);
-        Vector orangeBotLeft(orangeLeft, backWall, orangeBot);
-        Vector orangeBotRight(orangeRight, backWall, orangeBot);
+    RT::Line orangeLineTop(orangeTopLeft, orangeTopRight, RT::GetVisualDistance(canvas, frust, camera, orangeTopLeft) * width);
+    orangeLineTop.DrawWithinFrustum(canvas, frust);
+    RT::Line orangeLineRight(orangeTopRight, orangeBotRight, RT::GetVisualDistance(canvas, frust, camera, orangeTopRight) * width);
+    orangeLineRight.DrawWithinFrustum(canvas, frust);
+    RT::Line orangeLineBot(orangeBotRight, orangeBotLeft, RT::GetVisualDistance(canvas, frust, camera, orangeBotRight) * width);
+    orangeLineBot.DrawWithinFrustum(canvas, frust);
+    RT::Line orangeLineLeft(orangeBotLeft, orangeTopLeft, RT::GetVisualDistance(canvas, frust, camera, orangeBotLeft) * width);
+    orangeLineLeft.DrawWithinFrustum(canvas, frust);
 
-        RT::Line orangeLineTop(orangeTopLeft, orangeTopRight, RT::GetVisualDistance(canvas, frust, camera, orangeTopLeft) * width);
-        orangeLineTop.DrawWithinFrustum(canvas, frust);
-        RT::Line orangeLineRight(orangeTopRight, orangeBotRight, RT::GetVisualDistance(canvas, frust, camera, orangeTopRight) * width);
-        orangeLineRight.DrawWithinFrustum(canvas, frust);
-        RT::Line orangeLineBot(orangeBotRight, orangeBotLeft, RT::GetVisualDistance(canvas, frust, camera, orangeBotRight) * width);
-        orangeLineBot.DrawWithinFrustum(canvas, frust);
-        RT::Line orangeLineLeft(orangeBotLeft, orangeTopLeft, RT::GetVisualDistance(canvas, frust, camera, orangeBotLeft) * width);
-        orangeLineLeft.DrawWithinFrustum(canvas, frust);
+    float orangeSliceSpace = (top - bottom) / numSlices;
+    float orangeSliceZ = bottom + orangeSliceSpace;
+    for (int i = 0; i < numSlices - 1; i++) {
+        Vector orangeSliceLeft(leftOrange, backWall, orangeSliceZ);
+        Vector orangeSliceRight(rightOrange, backWall, orangeSliceZ);
 
-        float orangeSliceSpace = (orangeTop - orangeBot) / numSlices;
-        float orangeSliceZ = orangeBot + orangeSliceSpace;
-        for (int i = 0; i < numSlices - 1; i++) {
-            Vector orangeSliceLeft(orangeLeft, backWall, orangeSliceZ);
-            Vector orangeSliceRight(orangeRight, backWall, orangeSliceZ);
+        RT::Line orangeSlice(orangeSliceLeft, orangeSliceRight, RT::GetVisualDistance(canvas, frust, camera, orangeSliceLeft) * width);
+        orangeSlice.DrawWithinFrustum(canvas, frust);
 
-            RT::Line orangeSlice(orangeSliceLeft, orangeSliceRight, RT::GetVisualDistance(canvas, frust, camera, orangeSliceLeft) * width);
-            orangeSlice.DrawWithinFrustum(canvas, frust);
-
-            orangeSliceZ += orangeSliceSpace;
-        }
+        orangeSliceZ += orangeSliceSpace;
     }
+
+    //DEBUGLOG("End render");
 }

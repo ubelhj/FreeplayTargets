@@ -3,6 +3,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define _CRT_SECURE_NO_WARNINGS
 #include "bakkesmod/plugin/bakkesmodplugin.h"
+#include "RenderingTools\RenderingTools.h"
 
 #include <string>
 #include <vector>
@@ -22,9 +23,10 @@ void LOG(const S& format_str, Args&&... args)
 	_globalCvarManager->log(fmt::format(format_str, args...));
 }
 
-bool debugLog = true;
+constexpr bool DEBUGLOGENABLE = true;
+
 template<typename S, typename... Args>
 void DEBUGLOG(const S& format_str, Args&&... args)
 {
-	if (debugLog) { LOG(format_str, args...); }
+	if (DEBUGLOGENABLE) { LOG(format_str, args...); }
 }
