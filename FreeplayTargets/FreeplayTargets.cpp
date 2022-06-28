@@ -63,6 +63,23 @@ void FreeplayTargets::onLoad()
             }
             });
 
+    cvarManager->registerCvar("freeplay_targets_enable", "0", "Enable plugin", true, true, 0, true, 1)
+        .addOnValueChanged([this](auto, auto cvar) {
+            if (cvar.getBoolValue()) {
+                hookEvents();
+            } else {
+                unhookEvents();
+            }
+            });
+}
+
+void FreeplayTargets::onUnload()
+{
+}
+
+void FreeplayTargets::hookEvents() {
+    goalLoc = generateGoalLocation();
+    
     gameWrapper->HookEventPost("Function GameEvent_Soccar_TA.Active.StartRound",
         [this](...) {
             DEBUGLOG("New ROUND");
@@ -76,8 +93,12 @@ void FreeplayTargets::onLoad()
     gameWrapper->RegisterDrawable([this](CanvasWrapper canvas) { render(canvas); });
 }
 
-void FreeplayTargets::onUnload()
-{
+void FreeplayTargets::unhookEvents() {
+    gameWrapper->UnhookEventPost("Function GameEvent_Soccar_TA.Active.StartRound");
+
+    gameWrapper->UnhookEventPost("Function TAGame.Car_TA.SetVehicleInput");
+
+    gameWrapper->UnregisterDrawables();
 }
 
 void FreeplayTargets::onTick(CarWrapper caller) {

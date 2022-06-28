@@ -92,6 +92,9 @@ public:
 	int generateGoalLocation();
 	bool isWithin(Vector goalLoc, Vector ballLoc, bool blue);
 
+	void hookEvents();
+	void unhookEvents();
+
 	void render(CanvasWrapper canvas);
 	//std::shared_ptr<bool> enabled;
 

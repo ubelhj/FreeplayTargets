@@ -15,6 +15,14 @@ void FreeplayTargets::SetImGuiContext(uintptr_t ctx) {
 void FreeplayTargets::RenderSettings() {
 	ImGui::Text("Sets targets to aim for in freeplay");
 
+	CVarWrapper enableVar = cvarManager->getCvar("freeplay_targets_enable");
+	if (!enableVar) { return; }
+	auto enableValue = enableVar.getBoolValue();
+
+	if (ImGui::Checkbox("Enable plugin", &enableValue)) {
+		enableVar.setValue(enableValue);
+	}
+
 	CVarWrapper backVar = cvarManager->getCvar("freeplay_targets_back");
 	if (!backVar) { return; }
 	float backValue = backVar.getFloatValue();
@@ -41,8 +49,10 @@ void FreeplayTargets::RenderSettings() {
 		lineColorVar.setValue(lineColor * 255);
 	}
 
+	ImGui::Separator();
+
 	ImGui::TextUnformatted("Plugin commissioned by tom#6560");
-	ImGui::TextUnformatted("Plugin made by JerryTheBee#1117 - DM me on discord for custom plugin commissions!");
+	ImGui::TextUnformatted("Plugin made by JerryTheBee#1117");
 }
 
 /*
