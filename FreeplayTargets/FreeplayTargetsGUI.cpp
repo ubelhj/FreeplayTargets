@@ -45,13 +45,13 @@ void FreeplayTargets::RenderSettings() {
 	if (!lineColorVar) { return; }
 	// converts from 0-255 color to 0.0-1.0 color
 	LinearColor lineColor = lineColorVar.getColorValue() / 255;
-	if (ImGui::ColorEdit4("Line Color", &lineColor.R)) {
+	if (ImGui::ColorEdit4("Line Color", &lineColor.R, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_AlphaBar)) {
 		lineColorVar.setValue(lineColor * 255);
 	}
 
 	ImGui::Separator();
 
-	ImGui::TextUnformatted("Plugin commissioned by tom#6560");
+	ImGui::TextUnformatted("Plugin commissioned by mdashx");
 	ImGui::TextUnformatted("Plugin made by JerryTheBee#1117");
 }
 
